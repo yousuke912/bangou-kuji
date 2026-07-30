@@ -121,7 +121,10 @@ input:focus{border-color:var(--gold)}
 <section id="main" class="screen">
   <div class="bar">
     <div class="count">当選 <b id="cNow">0</b> / <span id="cMax">40</span> 名</div>
-    <button class="icon-btn" id="toSetting">⚙ 設定</button>
+    <div style="display:flex;gap:8px">
+      <button class="icon-btn" id="soundBtn">🔊 音あり</button>
+      <button class="icon-btn" id="toSetting">⚙ 設定</button>
+    </div>
   </div>
 
   <div class="stage">
@@ -212,8 +215,129 @@ const FX = {
 };
 const fxv = k => { try { return atob(FX[k]).split(',').map(n => parseInt(n, 10)).filter(n => n > 0); } catch (e) { return []; } };
 
+/* ============================================================
+   効果音（ドラムロール ＆ ジャーン）
+   音源ファイルは使わず、その場で合成しています
+   ============================================================ */
+let actx = null, noiseBuf = null;
+
+function ac() {
+  if (!actx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    actx = new AC();
+    const len = actx.sampleRate * 2;
+    noiseBuf = actx.createBuffer(1, len, actx.sampleRate);
+    const ch = noiseBuf.getChannelData(0);
+    for (let i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
+  }
+  if (actx.state === 'suspended') actx.resume();
+  return actx;
+}
+
+/* スネアの1打 */
+function hit(dest, t, vol, freq, dur) {
+  const c = ac(); if (!c) return;
+  const src = c.createBufferSource();
+  src.buffer = noiseBuf;
+  src.playbackRate.value = 1 + Math.random() * 0.2;
+  const bp = c.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 0.9;
+  const g = c.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  src.connect(bp); bp.connect(g); g.connect(dest);
+  src.start(t); src.stop(t + dur + 0.02);
+}
+
+/* ドラムロール（止めるまで鳴り続ける） */
+let rollGain = null, rollTimer = null, rollT0 = 0, rollAt = 0;
+
+function startRoll() {
+  if (!state.sound) return;
+  const c = ac(); if (!c) return;
+  stopRoll();
+  rollGain = c.createGain();
+  rollGain.gain.value = 1;
+  rollGain.connect(c.destination);
+  rollT0 = c.currentTime;
+  rollAt = c.currentTime + 0.02;
+  let n = 0;
+  const step = () => {
+    const cc = ac(); if (!cc || !rollGain) return;
+    while (rollAt < cc.currentTime + 0.35) {
+      const p = Math.min(1, (rollAt - rollT0) / 2.2);   // 2.2秒かけて盛り上がる
+      hit(rollGain, rollAt, 0.10 + 0.28 * p, 1500 + 700 * p, 0.055);
+      if (n % 8 === 0) hit(rollGain, rollAt, 0.16 + 0.20 * p, 190, 0.10);  // 低い響き
+      rollAt += 0.058 - 0.032 * p;
+      n++;
+    }
+  };
+  step();
+  rollTimer = setInterval(step, 120);
+}
+
+function stopRoll() {
+  if (rollTimer) { clearInterval(rollTimer); rollTimer = null; }
+  if (rollGain && actx) {
+    const g = rollGain, t = actx.currentTime;
+    try {
+      g.gain.cancelScheduledValues(t);
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.linearRampToValueAtTime(0, t + 0.05);
+    } catch (e) {}
+    setTimeout(() => { try { g.disconnect(); } catch (e) {} }, 400);
+    rollGain = null;
+  }
+}
+
+/* 決定音「ジャーン」 */
+function playTada() {
+  if (!state.sound) return;
+  const c = ac(); if (!c) return;
+  const t = c.currentTime;
+
+  /* シンバル */
+  const src = c.createBufferSource();
+  src.buffer = noiseBuf;
+  const hp = c.createBiquadFilter();
+  hp.type = 'highpass'; hp.frequency.value = 3800;
+  const cg = c.createGain();
+  cg.gain.setValueAtTime(0.0001, t);
+  cg.gain.exponentialRampToValueAtTime(0.5, t + 0.012);
+  cg.gain.exponentialRampToValueAtTime(0.0008, t + 1.7);
+  src.connect(hp); hp.connect(cg); cg.connect(c.destination);
+  src.start(t); src.stop(t + 1.9);
+
+  /* 和音（ドミソド） */
+  [261.63, 329.63, 392.00, 523.25, 659.25].forEach((f, i) => {
+    const o = c.createOscillator();
+    o.type = i < 3 ? 'sawtooth' : 'triangle';
+    o.frequency.value = f;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 4200;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.14, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + 1.5);
+    o.connect(lp); lp.connect(g); g.connect(c.destination);
+    o.start(t); o.stop(t + 1.6);
+  });
+
+  /* ドン（低音の一発） */
+  const b = c.createOscillator();
+  b.type = 'sine';
+  b.frequency.setValueAtTime(150, t);
+  b.frequency.exponentialRampToValueAtTime(45, t + 0.35);
+  const bg = c.createGain();
+  bg.gain.setValueAtTime(0.5, t);
+  bg.gain.exponentialRampToValueAtTime(0.0008, t + 0.6);
+  b.connect(bg); bg.connect(c.destination);
+  b.start(t); b.stop(t + 0.65);
+}
+
 let state = load();
-let spinning = false;
+let spinning = false, spinTimer = null, spinFrom = 0;
 
 function load() {
   let s = {};
@@ -224,6 +348,7 @@ function load() {
     count: s.count ?? DEFAULTS.count,
     exclude: Array.isArray(s.exclude) ? s.exclude : DEFAULTS.exclude,
     pass: s.pass || DEFAULTS.pass,
+    sound: s.sound !== false,
     drawn: Array.isArray(s.drawn) ? s.drawn : []
   };
 }
@@ -270,49 +395,79 @@ function nextNumber() {
   return p[Math.floor(Math.random() * p.length)];
 }
 
-function draw() {
+/* ボタン／スペースキー：1回目で回りだし、2回目で止まる */
+function draw() { spinning ? stopSpin() : startSpin(); }
+
+function startSpin() {
   if (spinning) return;
   if (state.drawn.length >= state.count) return;
-
-  const result = nextNumber();
-  if (result === null) {
+  if (nextNumber() === null) {
     alert('抽選できる番号がもうありません。設定の範囲や除外番号を確認してください。');
     return;
   }
 
   spinning = true;
-  const btn = document.getElementById('drawBtn');
+  spinFrom = Date.now();
   const el = document.getElementById('num');
-  btn.disabled = true;
   el.classList.remove('idle', 'pop');
   el.classList.add('spin');
   document.getElementById('stageLabel').textContent = 'DRAWING...';
+  document.getElementById('drawBtn').textContent = 'ス ト ッ プ';
+  startRoll();
 
   const lo = state.min, hi = state.max;
-  const start = Date.now();
-  let wait = FX.tickMs;
-
-  (function tick() {
-    const t = Date.now() - start;
+  spinTimer = setInterval(() => {
     el.textContent = Math.floor(Math.random() * (hi - lo + 1)) + lo;
-    if (t < FX.spinMs) {
-      wait = t > FX.spinMs * 0.6 ? wait * FX.decay : wait;
-      setTimeout(tick, wait);
-    } else {
-      state.drawn.push(result);
-      save();
-      el.classList.remove('spin');
-      el.textContent = result;
-      el.classList.add('pop');
-      document.getElementById('stageLabel').textContent = '当　選';
-      spinning = false;
-      render();
-    }
-  })();
+  }, FX.tickMs);
+}
+
+function stopSpin() {
+  if (!spinning) return;
+  if (Date.now() - spinFrom < 500) return;   // 押し間違いで即止まらないように
+
+  const result = nextNumber();
+  if (result === null) return;
+
+  clearInterval(spinTimer); spinTimer = null;
+  stopRoll();
+  spinning = false;
+
+  state.drawn.push(result);
+  save();
+
+  const el = document.getElementById('num');
+  el.classList.remove('spin');
+  el.textContent = result;
+  el.classList.add('pop');
+  document.getElementById('stageLabel').textContent = '当　選';
+  playTada();
+  render();
+}
+
+/* スペースキー */
+document.addEventListener('keydown', e => {
+  if (e.code !== 'Space' && e.key !== ' ') return;
+  const t = e.target.tagName;
+  if (t === 'INPUT' || t === 'TEXTAREA') return;
+  if (!document.getElementById('main').classList.contains('on')) return;
+  e.preventDefault();
+  draw();
+});
+
+/* 音のON/OFF */
+document.getElementById('soundBtn').addEventListener('click', () => {
+  state.sound = !state.sound;
+  if (!state.sound) stopRoll();
+  save();
+  renderSound();
+});
+function renderSound() {
+  document.getElementById('soundBtn').textContent = state.sound ? '🔊 音あり' : '🔇 音なし';
 }
 
 /* ---------- 表示更新 ---------- */
 function render() {
+  renderSound();
   const n = state.drawn.length;
   document.getElementById('cNow').textContent = n;
   document.getElementById('cMax').textContent = state.count;
@@ -347,6 +502,7 @@ function render() {
 
 /* ---------- 設定 ---------- */
 document.getElementById('toSetting').addEventListener('click', () => {
+  if (spinning) { clearInterval(spinTimer); spinTimer = null; spinning = false; stopRoll(); render(); }
   document.getElementById('sMin').value = state.min;
   document.getElementById('sMax').value = state.max;
   document.getElementById('sCount').value = state.count;
