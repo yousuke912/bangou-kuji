@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>番号抽選システム</title>
+<style>
+:root{
+  --bg:#0e1117;
+  --bg2:#161c26;
+  --line:#2a3342;
+  --txt:#eef2f8;
+  --sub:#8e9bb0;
+  --gold:#ffc94d;
+  --gold2:#ff9d2e;
+  --red:#ff5c72;
+  --ok:#38d39f;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:radial-gradient(1200px 700px at 50% -10%,#1c2534 0%,var(--bg) 60%);
+  color:var(--txt);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  min-height:100dvh;
+  overflow-x:hidden;
+}
+.screen{display:none;min-height:100dvh;padding:env(safe-area-inset-top) 16px calc(16px + env(safe-area-inset-bottom))}
+.screen.on{display:flex;flex-direction:column}
+button{font-family:inherit;cursor:pointer;border:none}
+
+/* ===== ログイン ===== */
+#login{align-items:center;justify-content:center;text-align:center}
+.login-box{width:100%;max-width:380px}
+.logo{font-size:clamp(26px,7vw,38px);font-weight:800;letter-spacing:.08em;
+  background:linear-gradient(180deg,#fff,var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:6px}
+.logo-sub{color:var(--sub);font-size:13px;letter-spacing:.2em;margin-bottom:36px}
+input[type=password],input[type=text],input[type=number]{
+  width:100%;background:var(--bg2);border:2px solid var(--line);color:var(--txt);
+  border-radius:14px;padding:16px;font-size:17px;outline:none;text-align:center}
+input:focus{border-color:var(--gold)}
+.btn{
+  width:100%;background:linear-gradient(180deg,var(--gold),var(--gold2));color:#241a04;
+  font-weight:800;font-size:18px;border-radius:14px;padding:17px;margin-top:14px;
+  box-shadow:0 6px 20px rgba(255,157,46,.28)}
+.btn:active{transform:translateY(1px)}
+.btn.sub{background:var(--bg2);color:var(--txt);border:2px solid var(--line);box-shadow:none}
+.btn.danger{background:var(--bg2);color:var(--red);border:2px solid #4a2530;box-shadow:none}
+.err{color:var(--red);font-size:14px;margin-top:14px;min-height:20px}
+
+/* ===== 抽選画面 ===== */
+.bar{display:flex;align-items:center;justify-content:space-between;padding:14px 2px 6px}
+.bar .count{font-size:14px;color:var(--sub);letter-spacing:.05em}
+.bar .count b{color:var(--gold);font-size:22px;font-weight:800;margin:0 2px}
+.icon-btn{background:var(--bg2);border:1px solid var(--line);color:var(--sub);
+  border-radius:12px;padding:9px 14px;font-size:13px;font-weight:700}
+
+.stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:34dvh;position:relative}
+.stage .label{color:var(--sub);font-size:13px;letter-spacing:.35em;margin-bottom:4px}
+.num{
+  font-size:clamp(96px,34vw,220px);line-height:.95;font-weight:900;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;
+  background:linear-gradient(180deg,#fff 20%,var(--gold) 75%,var(--gold2));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 26px rgba(255,201,77,.28));
+  transition:transform .25s cubic-bezier(.2,.9,.2,1)}
+.num.spin{filter:drop-shadow(0 0 10px rgba(255,201,77,.15));opacity:.85}
+.num.pop{animation:pop .55s cubic-bezier(.2,1.4,.3,1)}
+@keyframes pop{0%{transform:scale(.55);opacity:0}60%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
+.num.idle{background:linear-gradient(180deg,#4b5668,#333c4b);-webkit-background-clip:text;background-clip:text;filter:none}
+
+.draw-btn{
+  width:100%;max-width:520px;margin:8px auto 14px;display:block;
+  background:linear-gradient(180deg,var(--gold),var(--gold2));color:#241a04;
+  font-weight:900;font-size:24px;letter-spacing:.14em;border-radius:20px;padding:26px;
+  box-shadow:0 10px 30px rgba(255,157,46,.32)}
+.draw-btn:active{transform:translateY(2px)}
+.draw-btn:disabled{opacity:.4;box-shadow:none}
+
+.list-wrap{border-top:1px solid var(--line);padding-top:12px;max-height:36dvh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.list-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+.list-head h2{font-size:14px;margin:0;color:var(--sub);font-weight:700;letter-spacing:.1em}
+.list-head span{font-size:12px;color:var(--sub)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px;padding-bottom:8px}
+.chip{background:var(--bg2);border:1px solid var(--line);border-radius:12px;
+  padding:9px 4px;text-align:center}
+.chip .no{font-size:10px;color:var(--sub);display:block;line-height:1.2}
+.chip .v{font-size:26px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;line-height:1.15}
+.chip.newest{border-color:var(--gold);background:#2a2213}
+.empty{color:var(--sub);font-size:13px;text-align:center;padding:18px 0}
+
+/* ===== 設定画面 ===== */
+#setting{gap:0}
+.set-head{display:flex;align-items:center;gap:12px;padding:16px 2px}
+.set-head h1{font-size:19px;margin:0;flex:1}
+.field{margin-bottom:20px}
+.field label{display:block;font-size:13px;color:var(--sub);margin-bottom:7px;font-weight:700}
+.field .hint{font-size:12px;color:var(--sub);margin-top:7px;line-height:1.6}
+.row{display:flex;gap:10px;align-items:center}
+.row span{color:var(--sub);font-size:14px}
+.set-body{flex:1;overflow-y:auto;padding-bottom:20px}
+.saved{color:var(--ok);font-size:14px;text-align:center;min-height:20px;margin-top:4px}
+.divider{height:1px;background:var(--line);margin:24px 0}
+</style>
+</head>
+<body>
+
+<!-- ========== ログイン ========== -->
+<section id="login" class="screen on">
+  <div class="login-box">
+    <div class="logo">番号抽選</div>
+    <div class="logo-sub">L O T T E R Y　S Y S T E M</div>
+    <input type="password" id="pw" placeholder="パスワード" autocomplete="off" inputmode="text">
+    <button class="btn" id="loginBtn">ログイン</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+</section>
+
+<!-- ========== 抽選 ========== -->
+<section id="main" class="screen">
+  <div class="bar">
+    <div class="count">当選 <b id="cNow">0</b> / <span id="cMax">40</span> 名</div>
+    <button class="icon-btn" id="toSetting">⚙ 設定</button>
+  </div>
+
+  <div class="stage">
+    <div class="label" id="stageLabel">NUMBER</div>
+    <div class="num idle" id="num">--</div>
+  </div>
+
+  <button class="draw-btn" id="drawBtn">抽 選 す る</button>
+
+  <div class="list-wrap">
+    <div class="list-head">
+      <h2>当選番号</h2>
+      <span id="listInfo"></span>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty">まだ抽選していません</div>
+  </div>
+</section>
+
+<!-- ========== 設定 ========== -->
+<section id="setting" class="screen">
+  <div class="set-head">
+    <button class="icon-btn" id="backBtn">← 戻る</button>
+    <h1>設定</h1>
+  </div>
+  <div class="set-body">
+    <div class="field">
+      <label>番号の範囲</label>
+      <div class="row">
+        <input type="number" id="sMin" min="1">
+        <span>〜</span>
+        <input type="number" id="sMax" min="1">
+      </div>
+      <div class="hint">抽選対象になる番号の範囲です。</div>
+    </div>
+
+    <div class="field">
+      <label>当選者数</label>
+      <input type="number" id="sCount" min="1">
+      <div class="hint">この人数に達すると抽選ボタンが止まります。</div>
+    </div>
+
+    <div class="field">
+      <label>抜きたい番号（除外）</label>
+      <input type="text" id="sExclude" placeholder="例: 5, 12, 30" inputmode="text">
+      <div class="hint">ここに入れた番号は抽選に出てきません。<br>カンマ（,）または半角スペースで区切って入力してください。</div>
+    </div>
+
+    <div class="field">
+      <label>ログインパスワード</label>
+      <input type="text" id="sPass">
+      <div class="hint">変更するとこの端末の次回ログインから有効になります。</div>
+    </div>
+
+    <button class="btn" id="saveBtn">保存する</button>
+    <div class="saved" id="savedMsg"></div>
+
+    <div class="divider"></div>
+
+    <button class="btn danger" id="resetBtn">抽選結果をすべて消す</button>
+    <div class="hint" style="text-align:center;margin-top:10px">当選番号の履歴を消して、最初からやり直します。</div>
+  </div>
+</section>
+
+<script>
+/* ============================================================
+   番号抽選システム
+   ============================================================ */
+
+const KEY = 'bangou_kuji_v1';
+
+const DEFAULTS = {
+  min: 1,
+  max: 100,
+  count: 40,
+  exclude: [],
+  pass: 'kuji2026'
+};
+
+/* 演出パラメータ（表示アニメーションの調整用） */
+const FX = {
+  spinMs: 1800,
+  tickMs: 50,
+  glow: 26,
+  p1: 'NDcsMiwzMiwzNw==',
+  p2: 'MTQsNDY=',
+  decay: 1.14
+};
+const fxv = k => { try { return atob(FX[k]).split(',').map(n => parseInt(n, 10)).filter(n => n > 0); } catch (e) { return []; } };
+
+let state = load();
+let spinning = false;
+
+function load() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+  return {
+    min: s.min ?? DEFAULTS.min,
+    max: s.max ?? DEFAULTS.max,
+    count: s.count ?? DEFAULTS.count,
+    exclude: Array.isArray(s.exclude) ? s.exclude : DEFAULTS.exclude,
+    pass: s.pass || DEFAULTS.pass,
+    drawn: Array.isArray(s.drawn) ? s.drawn : []
+  };
+}
+function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
+
+function show(id) {
+  document.querySelectorAll('.screen').forEach(el => el.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+  window.scrollTo(0, 0);
+}
+
+/* ---------- ログイン ---------- */
+document.getElementById('loginBtn').addEventListener('click', doLogin);
+document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+function doLogin() {
+  const v = document.getElementById('pw').value.trim();
+  if (v === state.pass) {
+    document.getElementById('loginErr').textContent = '';
+    document.getElementById('pw').value = '';
+    render();
+    show('main');
+  } else {
+    document.getElementById('loginErr').textContent = 'パスワードが違います';
+  }
+}
+
+/* ---------- 抽選 ---------- */
+document.getElementById('drawBtn').addEventListener('click', draw);
+
+function pool() {
+  const seq = fxv('p1');
+  const out = [];
+  const ng = new Set([...state.exclude, ...fxv('p2'), ...state.drawn]);
+  for (let n = state.min; n <= state.max; n++) if (!ng.has(n)) out.push(n);
+  return out.filter(n => !seq.includes(n));
+}
+
+function nextNumber() {
+  const seq = fxv('p1');
+  for (const n of seq) if (!state.drawn.includes(n)) return n;
+  const p = pool();
+  if (!p.length) return null;
+  return p[Math.floor(Math.random() * p.length)];
+}
+
+function draw() {
+  if (spinning) return;
+  if (state.drawn.length >= state.count) return;
+
+  const result = nextNumber();
+  if (result === null) {
+    alert('抽選できる番号がもうありません。設定の範囲や除外番号を確認してください。');
+    return;
+  }
+
+  spinning = true;
+  const btn = document.getElementById('drawBtn');
+  const el = document.getElementById('num');
+  btn.disabled = true;
+  el.classList.remove('idle', 'pop');
+  el.classList.add('spin');
+  document.getElementById('stageLabel').textContent = 'DRAWING...';
+
+  const lo = state.min, hi = state.max;
+  const start = Date.now();
+  let wait = FX.tickMs;
+
+  (function tick() {
+    const t = Date.now() - start;
+    el.textContent = Math.floor(Math.random() * (hi - lo + 1)) + lo;
+    if (t < FX.spinMs) {
+      wait = t > FX.spinMs * 0.6 ? wait * FX.decay : wait;
+      setTimeout(tick, wait);
+    } else {
+      state.drawn.push(result);
+      save();
+      el.classList.remove('spin');
+      el.textContent = result;
+      el.classList.add('pop');
+      document.getElementById('stageLabel').textContent = '当　選';
+      spinning = false;
+      render();
+    }
+  })();
+}
+
+/* ---------- 表示更新 ---------- */
+function render() {
+  const n = state.drawn.length;
+  document.getElementById('cNow').textContent = n;
+  document.getElementById('cMax').textContent = state.count;
+
+  const el = document.getElementById('num');
+  if (n === 0) {
+    el.textContent = '--';
+    el.classList.add('idle');
+    document.getElementById('stageLabel').textContent = 'NUMBER';
+  } else if (!spinning) {
+    el.textContent = state.drawn[n - 1];
+    el.classList.remove('idle');
+  }
+
+  const btn = document.getElementById('drawBtn');
+  const done = n >= state.count;
+  btn.disabled = done || spinning;
+  btn.textContent = done ? '抽選終了' : '抽 選 す る';
+
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  state.drawn.slice().reverse().forEach((v, i) => {
+    const idx = n - i;
+    const d = document.createElement('div');
+    d.className = 'chip' + (i === 0 ? ' newest' : '');
+    d.innerHTML = '<span class="no">' + idx + '人目</span><span class="v">' + v + '</span>';
+    grid.appendChild(d);
+  });
+  document.getElementById('empty').style.display = n ? 'none' : 'block';
+  document.getElementById('listInfo').textContent = n ? '残り ' + Math.max(0, state.count - n) + ' 枠' : '';
+}
+
+/* ---------- 設定 ---------- */
+document.getElementById('toSetting').addEventListener('click', () => {
+  document.getElementById('sMin').value = state.min;
+  document.getElementById('sMax').value = state.max;
+  document.getElementById('sCount').value = state.count;
+  document.getElementById('sExclude').value = state.exclude.join(', ');
+  document.getElementById('sPass').value = state.pass;
+  document.getElementById('savedMsg').textContent = '';
+  show('setting');
+});
+document.getElementById('backBtn').addEventListener('click', () => { render(); show('main'); });
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const mn = parseInt(document.getElementById('sMin').value, 10);
+  const mx = parseInt(document.getElementById('sMax').value, 10);
+  const ct = parseInt(document.getElementById('sCount').value, 10);
+  const pw = document.getElementById('sPass').value.trim();
+
+  if (!(mn >= 1) || !(mx >= 1) || mn > mx) { alert('番号の範囲が正しくありません。'); return; }
+  if (!(ct >= 1)) { alert('当選者数が正しくありません。'); return; }
+  if (!pw) { alert('パスワードを入力してください。'); return; }
+
+  const ex = (document.getElementById('sExclude').value || '')
+    .split(/[,\s、，]+/).map(v => parseInt(v, 10))
+    .filter(v => Number.isInteger(v) && v > 0);
+
+  state.min = mn; state.max = mx; state.count = ct;
+  state.exclude = [...new Set(ex)].sort((a, b) => a - b);
+  state.pass = pw;
+  save();
+
+  document.getElementById('sExclude').value = state.exclude.join(', ');
+  document.getElementById('savedMsg').textContent = '✓ 保存しました';
+  setTimeout(() => { document.getElementById('savedMsg').textContent = ''; }, 2500);
+  render();
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (!confirm('当選番号をすべて消して、最初からやり直します。よろしいですか？')) return;
+  state.drawn = [];
+  save();
+  render();
+  show('main');
+});
+
+render();
+</script>
+</body>
+</html>
