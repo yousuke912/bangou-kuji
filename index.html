@@ -123,6 +123,7 @@ input:focus{border-color:var(--gold)}
     <div class="count">当選 <b id="cNow">0</b> / <span id="cMax">40</span> 名</div>
     <div style="display:flex;gap:8px">
       <button class="icon-btn" id="soundBtn">🔊 音あり</button>
+      <button class="icon-btn" id="resetMain">↺ リセット</button>
       <button class="icon-btn" id="toSetting">⚙ 設定</button>
     </div>
   </div>
@@ -538,13 +539,16 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   render();
 });
 
-document.getElementById('resetBtn').addEventListener('click', () => {
+function resetAll() {
   if (!confirm('当選番号をすべて消して、最初からやり直します。よろしいですか？')) return;
+  if (spinning) { clearInterval(spinTimer); spinTimer = null; spinning = false; stopRoll(); }
   state.drawn = [];
   save();
   render();
   show('main');
-});
+}
+document.getElementById('resetBtn').addEventListener('click', resetAll);
+document.getElementById('resetMain').addEventListener('click', resetAll);
 
 render();
 </script>
