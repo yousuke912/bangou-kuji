@@ -88,6 +88,9 @@ input:focus{border-color:var(--gold)}
 .chip .no{font-size:10px;color:var(--sub);display:block;line-height:1.2}
 .chip .v{font-size:26px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;line-height:1.15}
 .chip.newest{border-color:var(--gold);background:#2a2213}
+.chip.wait .v{color:#b8c4d6}
+.chip.wait .no{color:#7f8ca1}
+.chip.wait.newest{border-color:#b8c4d6;background:#232b38}
 .empty{color:var(--sub);font-size:13px;text-align:center;padding:18px 0}
 
 /* ===== 設定画面 ===== */
@@ -120,7 +123,7 @@ input:focus{border-color:var(--gold)}
 <!-- ========== 抽選 ========== -->
 <section id="main" class="screen">
   <div class="bar">
-    <div class="count">当選 <b id="cNow">0</b> / <span id="cMax">40</span> 名</div>
+    <div class="count">当選 <b id="cNow">0</b>/<span id="cMax">40</span>　待ち <b id="wNow">0</b>/<span id="wMax">5</span></div>
     <div style="display:flex;gap:8px">
       <button class="icon-btn" id="soundBtn">🔊 音あり</button>
       <button class="icon-btn" id="resetMain">↺ リセット</button>
@@ -165,7 +168,13 @@ input:focus{border-color:var(--gold)}
     <div class="field">
       <label>当選者数</label>
       <input type="number" id="sCount" min="1">
-      <div class="hint">この人数に達すると抽選ボタンが止まります。</div>
+      <div class="hint">当選として表示する人数です。</div>
+    </div>
+
+    <div class="field">
+      <label>キャンセル待ち人数</label>
+      <input type="number" id="sWait" min="0">
+      <div class="hint">当選者数のあとに続けて引く予備の人数です。0にもできます。<br>当選＋キャンセル待ちの合計に達すると抽選が止まります。</div>
     </div>
 
     <div class="field">
@@ -195,12 +204,13 @@ input:focus{border-color:var(--gold)}
    番号抽選システム
    ============================================================ */
 
-const KEY = 'bangou_kuji_v2';
+const KEY = 'bangou_kuji_v3';
 
 const DEFAULTS = {
   min: 1,
   max: 51,
   count: 40,
+  wait: 5,
   exclude: [],
   pass: 'tuY7*_w56o*9kw'
 };
@@ -347,6 +357,7 @@ function load() {
     min: s.min ?? DEFAULTS.min,
     max: s.max ?? DEFAULTS.max,
     count: s.count ?? DEFAULTS.count,
+    wait: s.wait ?? DEFAULTS.wait,
     exclude: Array.isArray(s.exclude) ? s.exclude : DEFAULTS.exclude,
     pass: s.pass || DEFAULTS.pass,
     sound: s.sound !== false,
@@ -399,9 +410,11 @@ function nextNumber() {
 /* ボタン／スペースキー：1回目で回りだし、2回目で止まる */
 function draw() { spinning ? stopSpin() : startSpin(); }
 
+function total() { return state.count + state.wait; }
+
 function startSpin() {
   if (spinning) return;
-  if (state.drawn.length >= state.count) return;
+  if (state.drawn.length >= total()) return;
   if (nextNumber() === null) {
     alert('抽選できる番号がもうありません。設定の範囲や除外番号を確認してください。');
     return;
@@ -440,7 +453,8 @@ function stopSpin() {
   el.classList.remove('spin');
   el.textContent = result;
   el.classList.add('pop');
-  document.getElementById('stageLabel').textContent = '当　選';
+  document.getElementById('stageLabel').textContent =
+    state.drawn.length > state.count ? 'キャンセル待ち ' + (state.drawn.length - state.count) : '当　選';
   playTada();
   render();
 }
@@ -470,8 +484,10 @@ function renderSound() {
 function render() {
   renderSound();
   const n = state.drawn.length;
-  document.getElementById('cNow').textContent = n;
+  document.getElementById('cNow').textContent = Math.min(n, state.count);
   document.getElementById('cMax').textContent = state.count;
+  document.getElementById('wNow').textContent = Math.max(0, n - state.count);
+  document.getElementById('wMax').textContent = state.wait;
 
   const el = document.getElementById('num');
   if (n === 0) {
@@ -484,7 +500,7 @@ function render() {
   }
 
   const btn = document.getElementById('drawBtn');
-  const done = n >= state.count;
+  const done = n >= total();
   btn.disabled = done || spinning;
   btn.textContent = done ? '抽選終了' : '抽 選 す る';
 
@@ -492,13 +508,15 @@ function render() {
   grid.innerHTML = '';
   state.drawn.slice().reverse().forEach((v, i) => {
     const idx = n - i;
+    const isWait = idx > state.count;
     const d = document.createElement('div');
-    d.className = 'chip' + (i === 0 ? ' newest' : '');
-    d.innerHTML = '<span class="no">' + idx + '人目</span><span class="v">' + v + '</span>';
+    d.className = 'chip' + (i === 0 ? ' newest' : '') + (isWait ? ' wait' : '');
+    const lab = isWait ? '待ち' + (idx - state.count) : idx + '人目';
+    d.innerHTML = '<span class="no">' + lab + '</span><span class="v">' + v + '</span>';
     grid.appendChild(d);
   });
   document.getElementById('empty').style.display = n ? 'none' : 'block';
-  document.getElementById('listInfo').textContent = n ? '残り ' + Math.max(0, state.count - n) + ' 枠' : '';
+  document.getElementById('listInfo').textContent = n ? '残り ' + Math.max(0, total() - n) + ' 枠' : '';
 }
 
 /* ---------- 設定 ---------- */
@@ -507,6 +525,7 @@ document.getElementById('toSetting').addEventListener('click', () => {
   document.getElementById('sMin').value = state.min;
   document.getElementById('sMax').value = state.max;
   document.getElementById('sCount').value = state.count;
+  document.getElementById('sWait').value = state.wait;
   document.getElementById('sExclude').value = state.exclude.join(', ');
   document.getElementById('sPass').value = state.pass;
   document.getElementById('savedMsg').textContent = '';
@@ -518,17 +537,19 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   const mn = parseInt(document.getElementById('sMin').value, 10);
   const mx = parseInt(document.getElementById('sMax').value, 10);
   const ct = parseInt(document.getElementById('sCount').value, 10);
+  const wt = parseInt(document.getElementById('sWait').value, 10);
   const pw = document.getElementById('sPass').value.trim();
 
   if (!(mn >= 1) || !(mx >= 1) || mn > mx) { alert('番号の範囲が正しくありません。'); return; }
   if (!(ct >= 1)) { alert('当選者数が正しくありません。'); return; }
+  if (!(wt >= 0)) { alert('キャンセル待ち人数が正しくありません。'); return; }
   if (!pw) { alert('パスワードを入力してください。'); return; }
 
   const ex = (document.getElementById('sExclude').value || '')
     .split(/[,\s、，]+/).map(v => parseInt(v, 10))
     .filter(v => Number.isInteger(v) && v > 0);
 
-  state.min = mn; state.max = mx; state.count = ct;
+  state.min = mn; state.max = mx; state.count = ct; state.wait = wt;
   state.exclude = [...new Set(ex)].sort((a, b) => a - b);
   state.pass = pw;
   save();
